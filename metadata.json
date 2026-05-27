@@ -1,0 +1,54 @@
+{
+  "appId": "com.fileforge.desktop",
+  "productName": "FileForge",
+  "copyright": "Copyright © 2026 FileForge AI",
+  "directories": {
+    "output": "dist_desktop"
+  },
+  "files": [
+    "package.json",
+    "index.html",
+    "dist/**/*",
+    "electron/**/*",
+    "database/**/*",
+    "fonts/**/*"
+  ],
+  "asar": true,
+  "asarUnpack": [
+    "dist/server.cjs"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "electron/icons/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "FileForge AI Dashboard",
+    "installerIcon": "electron/icons/installerIcon.ico",
+    "uninstallerIcon": "electron/icons/uninstallerIcon.ico",
+    "installerHeader": "electron/assets/installerHeader.bmp",
+    "installerHeaderIcon": "electron/icons/icon.ico",
+    "installerSidebar": "electron/assets/installerSidebar.bmp",
+    "uninstallerSidebar": "electron/assets/installerSidebar.bmp",
+    "uninstallDisplayName": "FileForge AI Uninstaller",
+    "runAfterFinish": true
+  },
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "target": ["dmg"],
+    "icon": "electron/icons/icon.icns"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Office",
+    "icon": "electron/icons/icon.png"
+  }
+}

@@ -1,0 +1,241 @@
+import React, { useState, useEffect } from "react";
+import { 
+  FileText, 
+  Lock, 
+  Download, 
+  Eye, 
+  Loader2, 
+  ShieldAlert, 
+  History, 
+  Share2,
+  CheckCircle2
+} from "lucide-react";
+import { apiFetch } from "../utils";
+
+export default function PublicShareViewer() {
+  const [shareId, setShareId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [shareMeta, setShareMeta] = useState<{ fileName: string, hasPassword: boolean, downloadCount: number, createdAt: string } | null>(null);
+  const [password, setPassword] = useState("");
+  const [fileBase64, setFileBase64] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [authenticating, setAuthenticating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    // Extract share ID from path
+    const pathSegments = window.location.pathname.split("/");
+    const id = pathSegments[pathSegments.indexOf("share") + 1];
+    if (id) {
+      setShareId(id);
+      fetchShareMetadata(id);
+    } else {
+      setLoading(false);
+      setErrorMsg("Invalid share signature link.");
+    }
+  }, []);
+
+  const fetchShareMetadata = async (id: string) => {
+    try {
+      const res = await apiFetch(`/api/share/view/${id}`);
+      const data = await res.json();
+      if (data.success) {
+        setShareMeta(data);
+        // If no password, auto trigger baseline fetch
+        if (!data.hasPassword) {
+          triggerFileDownload(id, "");
+        }
+      } else {
+        setErrorMsg(data.error || "The requested link has expired or was removed.");
+      }
+    } catch (_) {
+      setErrorMsg("Failed to communicate with share records.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const triggerFileDownload = async (id: string, pass: string) => {
+    setAuthenticating(true);
+    try {
+      const res = await apiFetch(`/api/share/download/${id}`, {
+        method: "POST",
+        body: JSON.stringify({ password: pass })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setFileBase64(data.fileBase64);
+        setErrorMsg("");
+      } else {
+        setErrorMsg(data.error || "Passcode verification failed.");
+      }
+    } catch (_) {
+      setErrorMsg("Network connection expired.");
+    } finally {
+      setAuthenticating(false);
+    }
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password.trim()) return;
+    triggerFileDownload(shareId, password);
+  };
+
+  const handleTriggerActionDownload = () => {
+    if (!fileBase64 || !shareMeta) return;
+    const blob = base64ToBlob(fileBase64, "application/octet-stream");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = shareMeta.fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const base64ToBlob = (base64: string, mime: string) => {
+    const byteChars = atob(base64);
+    const byteArrays = [];
+    for (let i = 0; i < byteChars.length; i += 512) {
+      const slice = byteChars.slice(i, i + 512);
+      const byteNumbers = new Array(slice.length);
+      for (let j = 0; j < slice.length; j++) {
+        byteNumbers[j] = slice.charCodeAt(j);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      byteArrays.push(byteArray);
+    }
+    return new Blob(byteArrays, { type: mime });
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0b0f19] flex items-center justify-center p-6 text-slate-550">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0b0f19] flex items-center justify-center p-6 relative select-none">
+      
+      {/* Decorative stars overlay bg */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/10 via-transparent to-transparent pointer-events-none" />
+
+      <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 md:p-8 space-y-6 relative z-10 animate-in fade-in duration-300">
+        
+        {/* Hub Logo Header */}
+        <div className="text-center space-y-2">
+          <div className="mx-auto h-12 w-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center border border-indigo-100/30">
+            <Share2 className="h-6 w-6 text-indigo-600" />
+          </div>
+          <h1 className="text-base font-extrabold font-display tracking-tight text-slate-800 dark:text-slate-100">
+            FileForge Public Share
+          </h1>
+          <p className="text-xxs font-mono text-slate-400 block uppercase tracking-wider">
+            Secured File Delivery Portal
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-rose-50/40 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 rounded-2xl text-rose-700 dark:text-rose-400 text-xxs font-semibold flex items-start gap-2 max-w-sm mx-auto">
+            <ShieldAlert className="h-4.5 w-4.5 flex-shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {shareMeta ? (
+          <div className="space-y-5">
+            
+            {/* File info card */}
+            <div className="p-4 bg-slate-50/50 dark:bg-slate-950/25 border border-slate-150 dark:border-slate-850 rounded-2xl flex items-center gap-3.5">
+              <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-250 truncate">{shareMeta.fileName}</p>
+                <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-bold">
+                  <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {shareMeta.downloadCount} views</span>
+                  <span className="flex items-center gap-1"><History className="h-3.5 w-3.5" /> {new Date(shareMeta.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Password input form */}
+            {shareMeta.hasPassword && !fileBase64 && (
+              <form onSubmit={handlePasswordSubmit} className="space-y-3 pt-1">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-404 uppercase block">Resource Passcode Required</label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter protective password..."
+                      className="w-full p-3 pl-10 bg-slate-50 border border-slate-200 rounded-xl text-xs dark:bg-slate-950 dark:border-slate-805"
+                    />
+                    <Lock className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-slate-400" />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authenticating || !password.trim()}
+                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+                >
+                  {authenticating ? "Verifying..." : "Verify Passcode"}
+                </button>
+              </form>
+            )}
+
+            {/* Success downloadable segment */}
+            {(fileBase64 || !shareMeta.hasPassword) && (
+              <div className="space-y-3 pt-2">
+                <p className="text-center text-xxs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Access Granted. Certified for secure delivery download.</span>
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleTriggerActionDownload}
+                    className="w-full flex items-center justify-center gap-1.5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer transition-all"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Download File</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyLink}
+                    className="w-full flex items-center justify-center gap-1.5 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+                  >
+                    <span>{copied ? "Copied Link!" : "Copy Link"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        ) : (
+          <div className="text-center py-6 text-xxs text-slate-400">
+            Resource missing or deleted.
+          </div>
+        )}
+
+        {/* Footer brand details */}
+        <p className="text-center text-[9px] font-mono text-slate-400 uppercase tracking-widest leading-none">
+          FileForge Security Certified Platform
+        </p>
+
+      </div>
+    </div>
+  );
+}

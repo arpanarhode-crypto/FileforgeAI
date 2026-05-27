@@ -1,0 +1,146 @@
+# FileForge Desktop — Offline Desktop Application Transition Guide
+
+This guide details the complete architecture, configurations, directory schemas, and native toolchains required to package and run **FileForge AI** as a high-performance, fully offline cross-platform desktop application using **React**, **Electron**, **Node/Express (or FastAPI)**, and **SQLite**.
+
+---
+
+## 1. Desktop App Architecture
+
+The desktop application operates on a robust multi-process architecture that enforces local isolation, sandboxed execution, and offline independence:
+
+```
+                  ┌────────────────────────────────────────┐
+                  │          ELECTRON MAIN PROCESS         │
+                  │   - Manages Resizable Window           │
+                  │   - Spawns Background Backend Process  │
+                  │   - Executes Native OS File Dialogs    │
+                  └───────────▲────────────────▲───────────┘
+                              │                │
+                    IPC (Preload Safe Bridge)  │ Localhost HTTP
+                              │                │
+   ┌──────────────────────────▼────────┐   ┌───▼────────────────────────────────┐
+   │         RENDERING PROCESS         │   │        LOCAL BACKEND SERVICE       │
+   │  - React Frontend Styled UI       │   │   - Node Express (or FastAPI) App  │
+   │  - Handles Drag-Drop Uploads      │◄──┼─  - Local File Manipulation Engine │
+   │  - Local PDF-Lib Client Engines   │   │   - SQLite Local Data Driver       │
+   └───────────────────────────────────┘   └────────────────────────────────────┘
+```
+
+- **Render Process:** Runs the user interface in a Chromium-based context. Standard security settings block node integration in the renderer to prevent Cross-Site Scripting (XSS) issues.
+- **Electron Preload Secure Bridge:** Connects Chromium views to Electron's main process safe bindings (`dialogs`, `local storage status`) via non-writable `contextBridge` protocols.
+- **Background Server Child-Process:** Spawns a dedicated backend process in the local container on application launch, binding strictly to a local loopback port, avoiding external port bindings.
+
+---
+
+## 2. Desktop-Aligned Structure
+
+Your upgraded directory layout accommodates native asset handling, database instances, and Electron configurations cleanly:
+
+```
+fileforge-desktop/
+├── database/                # Local Persistence Repository
+│   └── fileforge.db         # Standalone SQLite Database Match (Created on first run)
+├── dist/                    # Compiled React SPA Production Assets
+├── dist_desktop/            # Compiled Native Installers & Executables (.exe, .dmg)
+├── electron/                # Core Electron Host Scripts
+│   ├── main.cjs             # Host Window & Backend Spawn Controller
+│   └── preload.cjs          # Context-Isolated Communications Bridge
+├── fonts/                   # Localized TrueType Unicode Fonts for Offline Conversions
+├── outputs/                 # Temporary Safe Path for Local File Transmissions
+├── server/                  # Backend Controller Modules
+│   ├── auth.ts              # Local JSON Web Token (JWT) Security Filters
+│   ├── db.ts                # Dual-Mode Database Selector
+│   └── db-sqlite.ts         # High-Performance SQLite Adapter Driver
+├── electron-builder.json    # Packaging Assembly Configurations
+├── package.json             # App scripts and core packages list
+├── server.ts                # Host Express Server Entrypoint
+└── vite.config.ts           # Frontend compiler configurations
+```
+
+---
+
+## 3. High-Quality Offline Integrations
+
+To perform complete local transformations without relying on internet APIs, integrate these offline processing configurations:
+
+### A. Word to PDF Conversions
+- **Fully Offline Client:** This operation is handled entirely on-device and locally. 
+- **Font caching:** Character sets are saved to the `fonts/` folder. On conversion request, FileForge scrapes character glyph inputs from the DOCX file, embeds matching TrueType (.ttf) files into the compiler, and saves outputs instantly.
+
+### B. PDF Merging, Splitting, and Multi-Level Compression
+- **Engine:** Evaluated locally via `@pdf-lib` and `pdf-parse`.
+- **Latency:** Instant processing (less than 100ms) with zero latency or cloud queues.
+
+### C. Offline Optical Character Recognition (OCR)
+1. **Local Node OCR Engine:** Integrate standard offline `tesseract.js` which compiles completely inside Node.js using web assembly.
+2. **Local Environment Installer:** Install **Tesseract OCR (Windows .exe)** and provide the binary path inside your localized `.env`:
+   ```bash
+   TESSERACT_PATH="C:\Program Files\Tesseract-OCR\tesseract.exe"
+   ```
+3. **Execution Routing:** The server will coordinate local PDF/Image extractions via automated commandline triggers.
+
+### D. Offline Word Compilation (LibreOffice & Ghostscript Support)
+To handle intricate tables, vector renders, and layout translations, FileForge supports offline translation wrappers using LibreOffice:
+1. **Toolchain setup:** Install LibreOffice on your Windows environment.
+2. **Path configuration:** Add the wrapper execution trigger inside `.env`:
+   ```bash
+   LIBREOFFICE_PATH="C:\Program Files\LibreOffice\program\soffice.exe"
+   ```
+3. **Automated Conversion:** The Express server calls headless LibreOffice to perform layouts, and utilizes Ghostscript (`gswin64c.exe`) to perform deep-level compression cleanly on-device.
+
+---
+
+## 4. SQLite Schema Structure & Local Tracking
+
+PostgreSQL or atomic JSON registries have been transitioned to an optimized SQLite instance in `database/fileforge.db`.
+
+### Core Database Tables:
+1. **`users`**: Registers user profiles locally for offline user logins.
+2. **`subscriptions`**: Controls user capabilities locally. Supports cash registers or offline perpetual VIP activation keys.
+3. **`usage_tracking`**: Keeps track of active operations offline relative to a 24-hour cycle. Reset routines evaluate on device time records.
+4. **`history`**: Logs past file conversion histories. Includes file name details, and status.
+5. **`settings`** *(New)*: Stores app configurations (like localized paths for Tesseract, LibreOffice, dark mode triggers, and key allocations).
+6. **`offline_license_cache`** *(New)*: Locally encrypts premium authorization tickets so offline installations maintain Premium access.
+
+### Dual-Database Mode Architecture:
+Our core file `server/db.ts` integrates a dynamic dual-database adapter:
+- **Web/Server deployments:** Safely fallback to atomic JSON file databases.
+- **Desktop mode installations:** Uses the full-performance SQLite engine synchronously inside the local Electron backend.
+
+---
+
+## 5. Setup, Build, and Packaging Commands
+
+Deploying your desktop builds operates through automated, high-level commands:
+
+### Prerequisites:
+Make sure you have Node.js (v18+) and npm installed locally.
+
+### Step 1: Install Dependencies
+Download FileForge and execute the installer inside your root folder:
+```bash
+npm install
+```
+
+### Step 2: Start the Developer Dashboard (Hot-Reload Mode)
+Boots Vite's client and launch Electron in the user context linked directly to the developer hot reload pipeline:
+```bash
+npm run electron:dev
+```
+
+### Step 3: Bundle and Package Installer Packages
+Compiles the React SPA, packages Express servers via `esbuild`, and compiles your target `.exe` Windows installer in `dist_desktop/` directory:
+```bash
+npm run electron:build
+```
+
+---
+
+## 6. Comprehensive Windows Execution
+
+The NSIS deployment pipeline packages FileForge as a native Windows installer:
+
+1. **Launch `FileForge_1.0.0_x64.exe`**: Activates a multi-step graphic installer setup.
+2. **Desktop & Taskbar Shortcuts**: Automatically binds native app menus, user launching triggers, and keyboard control setups.
+3. **Startup and Service Registries**: Registers a persistent startup daemon. When windows boots up, the service can execute in safe headless configurations, updating settings cache asynchronously.
+4. **Resource Cleaning on Uninstallation**: Standard Windows uninstallation cleanly purges stored SQLite caches, logs, and temp segments without polluting device hardware folders.
